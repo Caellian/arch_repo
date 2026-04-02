@@ -22,12 +22,19 @@ init:
 activate:
     #!/bin/sh
     set -eu
-    if grep -q '^\[{{ repo_name }}\]' /etc/pacman.conf; then
+    if ! grep -q '^\[{{ repo_name }}\]' /etc/pacman.conf; then
+        sudo sed -i "/^\[core\]/i\\[{{ repo_name }}]\nSigLevel = Optional TrustAll\nServer = file://{{ repo_dir }}\n" /etc/pacman.conf
+        echo "==> {{ repo_name }} added to pacman.conf (before [core])"
+    else
         echo "==> {{ repo_name }} already in pacman.conf"
-        exit 0
     fi
-    sudo sed -i "/^\[core\]/i\\[{{ repo_name }}]\nSigLevel = Optional TrustAll\nServer = file://{{ repo_dir }}\n" /etc/pacman.conf
-    echo "==> {{ repo_name }} added to pacman.conf (before [core])"
+    for unit in dist/etc/systemd/system/localrepo.*; do
+        sed "s|@@REPO_DIR@@|{{ justfile_directory() }}|g" "$unit" \
+            | sudo tee /etc/systemd/system/"$(basename "$unit")" > /dev/null
+    done
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now localrepo.timer
+    echo "==> localrepo.timer enabled"
 
 # Remove local repo from pacman.conf
 deactivate:
@@ -39,6 +46,10 @@ deactivate:
     fi
     sudo sed -i '/^\[{{ repo_name }}\]/,/^$/d' /etc/pacman.conf
     echo "==> {{ repo_name }} removed from pacman.conf"
+    sudo systemctl disable --now localrepo.timer 2>/dev/null || true
+    sudo rm -f /etc/systemd/system/localrepo.service /etc/systemd/system/localrepo.timer
+    sudo systemctl daemon-reload
+    echo "==> localrepo.timer removed"
 
 # Build packages and update the local repo (optionally specify a single package)
 build pkg="":

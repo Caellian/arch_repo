@@ -1,0 +1,9 @@
+[Unit]
+Description=Periodically sync local pacman repo from S3
+
+[Timer]
+OnCalendar=Thu 14:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target

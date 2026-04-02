@@ -1,0 +1,7 @@
+[Unit]
+Description=Sync local pacman repo from S3
+
+[Service]
+Type=oneshot
+WorkingDirectory=@@REPO_DIR@@
+ExecStart=/usr/bin/just pull
