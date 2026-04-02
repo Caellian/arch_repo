@@ -1,0 +1,42 @@
+# Maintainer: Tin Švagelj <tin.svagelj@live.com>
+
+pkgname=tree-sitter-glsl
+pkgver=0.3.0
+pkgrel=1
+pkgdesc='GLSL grammar for tree-sitter'
+arch=(x86_64)
+url=https://github.com/Caellian/tree-sitter-glsl
+license=(MIT)
+groups=(tree-sitter-grammars)
+makedepends=(
+  git
+  tree-sitter-cli
+)
+optdepends=('tree-sitter: core library')
+provides=("lib$pkgname.so")
+source=("git+$url.git#commit=e198f61f53c12fcc96a7f0399814ef3c444009e1")
+b2sums=('SKIP')
+
+prepare() {
+  cd $pkgname
+  tree-sitter generate src/grammar.json
+}
+
+build() {
+  cd $pkgname
+  make PREFIX=/usr PARSER_URL=$url
+}
+
+package() {
+  install -d "$pkgdir"/usr/lib/tree_sitter
+  ln -s /usr/lib/lib$pkgname.so \
+    "$pkgdir"/usr/lib/tree_sitter/${pkgname#tree-sitter-}.so
+
+  cd $pkgname
+  make DESTDIR="$pkgdir" PREFIX=/usr install
+  install -Dm644 -t "$pkgdir"/usr/share/doc/$pkgname README.md
+  install -Dm644 -t "$pkgdir"/usr/share/licenses/$pkgname LICENSE
+
+  install -d "$pkgdir"/usr/share/tree-sitter/queries/glsl
+  install -Dm644 queries/*.scm "$pkgdir"/usr/share/tree-sitter/queries/glsl/
+}
