@@ -47,7 +47,7 @@ jobs:
           chmod a+w "$GITHUB_OUTPUT" "$GITHUB_STEP_SUMMARY"
           runuser -u builder -- .github/scripts/build-all.sh
 
-      - name: Push packages to S3
+      - name: Push to S3
         if: steps.build.outputs.succeeded_packages != ''
         run: just push
 

@@ -13,9 +13,9 @@ done
 
 if $force; then
     aws s3 sync "$repo_dir" "$s3_bucket" \
-        --exclude '*' --include '*.pkg.tar.zst' --include '*.db*' --include '*.files*' --include '*.index'
+        --exclude '*' --include '*.pkg.tar.zst' --include '*.db*' --include '*.files*' --include '*.index' --exclude '*.old'
 else
     aws s3 sync "$repo_dir" "$s3_bucket" \
-        --exclude '*' --include '*.pkg.tar.zst' --include '*.db*' --include '*.files*' --include '*.index' \
+        --exclude '*' --include '*.pkg.tar.zst' --include '*.db*' --include '*.files*' --include '*.index' --exclude '*.old' \
         --size-only
 fi

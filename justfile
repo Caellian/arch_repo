@@ -55,11 +55,11 @@ check-patches:
 
 # Pull repo database and packages from S3
 pull:
-    aws s3 sync "{{ s3_bucket }}" "{{ repo_dir }}" --exclude '*' --include '*.pkg.tar.zst' --include '*.db*' --include '*.files*' --include '*.index'
+    aws s3 sync "{{ s3_bucket }}" "{{ repo_dir }}" --exclude '*' --include '*.pkg.tar.zst' --include '*.db*' --include '*.files*' --include '*.index' --exclude '*.old'
 
 # Pull only the repo database from S3 (no packages)
 pull-db:
-    aws s3 sync "{{ s3_bucket }}" "{{ repo_dir }}" --exclude '*' --include '*.db*' --include '*.files*' --include '*.index'
+    aws s3 sync "{{ s3_bucket }}" "{{ repo_dir }}" --exclude '*' --include '*.db*' --include '*.files*' --include '*.index' --exclude '*.old'
 
 # Push new packages to S3 (use -f to force overwrite)
 push *flags="":
