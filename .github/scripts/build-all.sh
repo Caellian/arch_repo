@@ -35,9 +35,14 @@ for dir in packages/*/; do
     pkg=$(basename "$dir")
     echo "::group::Building $pkg"
     if just build "$pkg" > /tmp/build-logs/"$pkg".log 2>&1; then
-        echo "pass $pkg" >> /tmp/build-results.txt
-        succeeded="${succeeded:+$succeeded,}$pkg"
-        echo "==> $pkg: OK"
+        if grep -q '==> Skipping' /tmp/build-logs/"$pkg".log; then
+            echo "skip $pkg" >> /tmp/build-results.txt
+            echo "==> $pkg: skipped"
+        else
+            echo "pass $pkg" >> /tmp/build-results.txt
+            succeeded="${succeeded:+$succeeded,}$pkg"
+            echo "==> $pkg: OK"
+        fi
     else
         echo "fail $pkg" >> /tmp/build-results.txt
         failed="${failed:+$failed,}$pkg"
@@ -62,11 +67,11 @@ fi
     echo "| Package | Result |"
     echo "|---------|--------|"
     while IFS=' ' read -r status pkg; do
-        if [ "$status" = "pass" ]; then
-            echo "| $pkg | :white_check_mark: |"
-        else
-            echo "| $pkg | :x: |"
-        fi
+        case "$status" in
+            pass) echo "| $pkg | :white_check_mark: |" ;;
+            skip) echo "| $pkg | :fast_forward: skipped |" ;;
+            fail) echo "| $pkg | :x: |" ;;
+        esac
     done < /tmp/build-results.txt
 } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
 

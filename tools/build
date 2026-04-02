@@ -8,7 +8,28 @@ patch_dir="${PATCH_DIR:?}"
 root_dir="${ROOT_DIR:?}"
 pkg="${1:-}"
 
+index="$repo_dir/$repo_name.index"
 mkdir -p "$repo_dir"
+touch "$index"
+
+# Compute a fingerprint of all build inputs for a package.
+# Includes: PKGBUILD (post-patch), overlay files, submodule commit.
+pkg_fingerprint() {
+    dir="$1"
+    pkg="$2"
+    {
+        # PKGBUILD after patches
+        sha256sum "$dir/PKGBUILD"
+        # Overlay files (patches + injected)
+        if [ -d "$patch_dir/$pkg" ]; then
+            find "$patch_dir/$pkg" -type f | sort | xargs sha256sum
+        fi
+        # Submodule commit
+        if [ -f "$dir/.git" ]; then
+            git -C "$dir" rev-parse HEAD
+        fi
+    } | sha256sum | cut -d' ' -f1
+}
 
 if [ -n "$pkg" ]; then
     set -- "$pkg_dir/$pkg"
@@ -19,27 +40,6 @@ fi
 for dir in "$@"; do
     [ -f "$dir/PKGBUILD" ] || continue
     pkg=$(basename "$dir")
-
-    # Check if package already built
-    pkgname=$(grep -m1 '^pkgname=' "$dir/PKGBUILD" | cut -d= -f2)
-    pkgver=$(grep -m1 '^pkgver=' "$dir/PKGBUILD" | cut -d= -f2)
-    pkgrel=$(grep -m1 '^pkgrel=' "$dir/PKGBUILD" | cut -d= -f2)
-    arch=$(grep -m1 '^arch=' "$dir/PKGBUILD" | sed "s/^arch=('\([^']*\)').*/\1/")
-    expected="$repo_dir/${pkgname}-${pkgver}-${pkgrel}-${arch}.pkg.tar.zst"
-    db="$repo_dir/$repo_name.db.tar.gz"
-
-    if [ -f "$expected" ]; then
-        echo "==> Skipping $pkg (already built)"
-        continue
-    elif [ -f "$db" ] && bsdtar -tf "$db" "${pkgname}-${pkgver}-${pkgrel}/desc" >/dev/null 2>&1; then
-        echo "==> Skipping $pkg (${pkgver}-${pkgrel} already in repo database)"
-        continue
-    fi
-
-    # Remove old versions
-    rm -f "$repo_dir"/${pkgname}-*.pkg.tar.zst
-
-    echo "==> Building $pkg..."
     cd "$dir"
 
     # Apply overlay: inject files then apply patches
@@ -47,7 +47,9 @@ for dir in "$@"; do
         for f in "$patch_dir/$pkg"/*; do
             [ -f "$f" ] || continue
             name=$(basename "$f")
-            if [ "${name%.patch}" != "$name" ] && [ -f "${name%.patch}" ]; then
+            # foo.patch patches foo, foo.some-description.patch also patches foo
+            target=$(echo "${name%.patch}" | sed 's/\.[a-z0-9-]*$//')
+            if [ "${name%.patch}" != "$name" ] && [ -f "$target" ]; then
                 echo "    Applying $name..."
                 patch -p1 < "$f"
             else
@@ -57,6 +59,22 @@ for dir in "$@"; do
         done
     fi
 
+    pkgname=$(grep -m1 '^pkgname=' PKGBUILD | cut -d= -f2)
+    fingerprint=$(pkg_fingerprint "$dir" "$pkg")
+    stored=$(grep "^$pkgname " "$index" | cut -d' ' -f2 || true)
+
+    if [ "$fingerprint" = "$stored" ]; then
+        echo "==> Skipping $pkg (inputs unchanged)"
+        git checkout . 2>/dev/null || true
+        cd "$root_dir"
+        continue
+    fi
+
+    # Remove old versions
+    rm -f "$repo_dir"/${pkgname}-*.pkg.tar.zst
+
+    echo "==> Building $pkg..."
+
     # Build and always reset patches afterward
     build_ok=true
     makepkg -sf --noconfirm --cleanbuild || build_ok=false
@@ -64,6 +82,9 @@ for dir in "$@"; do
 
     if $build_ok; then
         mv -f *.pkg.tar.zst "$repo_dir/"
+        # Update index
+        sed -i "/^$pkgname /d" "$index"
+        echo "$pkgname $fingerprint" >> "$index"
     else
         exit 1
     fi

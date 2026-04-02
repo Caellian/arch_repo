@@ -1,0 +1,5 @@
+--- a/PKGBUILD
++++ b/PKGBUILD
+@@ -1 +1 @@
+-pkgname=msvc-wine-git
++pkgname=msvc-wine
