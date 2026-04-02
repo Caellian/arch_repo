@@ -2,6 +2,7 @@
 
 pkgname=tree-sitter-glsl
 pkgver=0.3.0
+_commit=e198f61f53c12fcc96a7f0399814ef3c444009e1
 pkgrel=1
 pkgdesc='GLSL grammar for tree-sitter'
 arch=(x86_64)
@@ -14,7 +15,7 @@ makedepends=(
 )
 optdepends=('tree-sitter: core library')
 provides=("lib$pkgname.so")
-source=("git+$url.git#commit=e198f61f53c12fcc96a7f0399814ef3c444009e1")
+source=("git+$url.git#commit=$_commit")
 b2sums=('SKIP')
 
 prepare() {

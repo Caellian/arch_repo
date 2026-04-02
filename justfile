@@ -154,9 +154,13 @@ update pkg="" version="":
             latest=$("{{ update_dir }}/$pkg.sh" "$pkgver" | grep '"tag":"stable"' | head -1)
             [ -n "$latest" ] || continue
             new_ver=$(echo "$latest" | grep -oP '"version":"\K[^"]+')
+            new_commit=$(echo "$latest" | grep -oP '"commit":"\K[^"]+' || true)
         fi
         sed -i "s/^pkgver=.*/pkgver=$new_ver/" "$dir/PKGBUILD"
         sed -i 's/^pkgrel=.*/pkgrel=1/' "$dir/PKGBUILD"
+        if [ -n "${new_commit:-}" ] && grep -q '^_commit=' "$dir/PKGBUILD"; then
+            sed -i "s/^_commit=.*/_commit=$new_commit/" "$dir/PKGBUILD"
+        fi
         echo "==> $pkg: $pkgver -> $new_ver"
     done
 
