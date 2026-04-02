@@ -4,6 +4,7 @@ patch_dir := justfile_directory() / "patches"
 update_dir := justfile_directory() / "update_check"
 
 repo_name := "caellian"
+service_name := "localrepo"
 s3_bucket := "s3://packages-794644791074-eu-central-1-an"
 
 export AWS_SHARED_CREDENTIALS_FILE := if env("CI", "") != "" { "" } else { justfile_directory() / ".aws/credentials" }
@@ -28,13 +29,23 @@ activate:
     else
         echo "==> {{ repo_name }} already in pacman.conf"
     fi
-    for unit in dist/etc/systemd/system/localrepo.*; do
-        sed "s|@@REPO_DIR@@|{{ justfile_directory() }}|g" "$unit" \
-            | sudo tee /etc/systemd/system/"$(basename "$unit")" > /dev/null
-    done
-    sudo systemctl daemon-reload
-    sudo systemctl enable --now localrepo.timer
-    echo "==> localrepo.timer enabled"
+    if command -v systemctl >/dev/null 2>&1; then
+        for unit in dist/etc/systemd/system/{{ service_name }}.*; do
+            sed "s|@@REPO_DIR@@|{{ justfile_directory() }}|g" "$unit" \
+                | sudo tee /etc/systemd/system/"$(basename "$unit")" > /dev/null
+        done
+        sudo systemctl daemon-reload
+        sudo systemctl enable --now {{ service_name }}.timer
+        echo "==> {{ service_name }}.timer enabled (systemd)"
+    elif [ -d /etc/cron.d ]; then
+        sed "s|@@REPO_DIR@@|{{ justfile_directory() }}|g" \
+            dist/etc/cron.d/{{ service_name }} \
+            | sudo tee /etc/cron.d/{{ service_name }} > /dev/null
+        sudo chmod 644 /etc/cron.d/{{ service_name }}
+        echo "==> /etc/cron.d/{{ service_name }} installed (cron)"
+    else
+        echo "==> No supported scheduler found (systemd/cron), skipping timer setup"
+    fi
 
 # Remove local repo from pacman.conf
 deactivate:
@@ -46,10 +57,15 @@ deactivate:
     fi
     sudo sed -i '/^\[{{ repo_name }}\]/,/^$/d' /etc/pacman.conf
     echo "==> {{ repo_name }} removed from pacman.conf"
-    sudo systemctl disable --now localrepo.timer 2>/dev/null || true
-    sudo rm -f /etc/systemd/system/localrepo.service /etc/systemd/system/localrepo.timer
-    sudo systemctl daemon-reload
-    echo "==> localrepo.timer removed"
+    if command -v systemctl >/dev/null 2>&1; then
+        sudo systemctl disable --now {{ service_name }}.timer 2>/dev/null || true
+        sudo rm -f /etc/systemd/system/{{ service_name }}.service /etc/systemd/system/{{ service_name }}.timer
+        sudo systemctl daemon-reload
+        echo "==> {{ service_name }}.timer removed"
+    elif [ -f /etc/cron.d/{{ service_name }} ]; then
+        sudo rm -f /etc/cron.d/{{ service_name }}
+        echo "==> /etc/cron.d/{{ service_name }} removed"
+    fi
 
 # Build packages and update the local repo (optionally specify a single package)
 build pkg="":

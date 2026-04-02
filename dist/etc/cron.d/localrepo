@@ -1,0 +1,2 @@
+# Sync local pacman repo from S3 - Thursday 14:00 UTC
+0 14 * * 4 root cd @@REPO_DIR@@ && /usr/bin/just pull
