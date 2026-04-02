@@ -1,0 +1,25 @@
+#!/bin/sh
+set -eu
+
+pkg_dir="${PKG_DIR:?}"
+patch_dir="${PATCH_DIR:?}"
+root_dir="${ROOT_DIR:?}"
+
+for dir in "$patch_dir"/*/; do
+    [ -d "$dir" ] || continue
+    pkg=$(basename "$dir")
+    [ -d "$pkg_dir/$pkg" ] || continue
+
+    echo "==> Checking patches for $pkg..."
+    cd "$pkg_dir/$pkg"
+
+    for p in "$dir"*.patch; do
+        [ -f "$p" ] || continue
+        echo "    $(basename "$p")..."
+        patch --dry-run -p1 < "$p"
+    done
+
+    cd "$root_dir"
+done
+
+echo "==> All patches apply cleanly"

@@ -1,0 +1,72 @@
+#!/bin/sh
+set -eu
+
+repo_dir="${REPO_DIR:?}"
+repo_name="${REPO_NAME:?}"
+pkg_dir="${PKG_DIR:?}"
+patch_dir="${PATCH_DIR:?}"
+root_dir="${ROOT_DIR:?}"
+pkg="${1:-}"
+
+mkdir -p "$repo_dir"
+
+if [ -n "$pkg" ]; then
+    set -- "$pkg_dir/$pkg"
+else
+    set -- "$pkg_dir"/*/
+fi
+
+for dir in "$@"; do
+    [ -f "$dir/PKGBUILD" ] || continue
+    pkg=$(basename "$dir")
+
+    # Check if package already built
+    pkgname=$(grep -m1 '^pkgname=' "$dir/PKGBUILD" | cut -d= -f2)
+    pkgver=$(grep -m1 '^pkgver=' "$dir/PKGBUILD" | cut -d= -f2)
+    pkgrel=$(grep -m1 '^pkgrel=' "$dir/PKGBUILD" | cut -d= -f2)
+    arch=$(grep -m1 '^arch=' "$dir/PKGBUILD" | sed "s/^arch=('\([^']*\)').*/\1/")
+    expected="$repo_dir/${pkgname}-${pkgver}-${pkgrel}-${arch}.pkg.tar.zst"
+    db="$repo_dir/$repo_name.db.tar.gz"
+
+    if [ -f "$expected" ]; then
+        echo "==> Skipping $pkg (already built)"
+        continue
+    elif [ -f "$db" ] && bsdtar -tf "$db" "${pkgname}-${pkgver}-${pkgrel}/desc" >/dev/null 2>&1; then
+        echo "==> Skipping $pkg (${pkgver}-${pkgrel} already in repo database)"
+        continue
+    fi
+
+    # Remove old versions
+    rm -f "$repo_dir"/${pkgname}-*.pkg.tar.zst
+
+    echo "==> Building $pkg..."
+    cd "$dir"
+
+    # Apply overlay: inject files then apply patches
+    if [ -d "$patch_dir/$pkg" ]; then
+        for f in "$patch_dir/$pkg"/*; do
+            [ -f "$f" ] || continue
+            name=$(basename "$f")
+            if [ "${name%.patch}" != "$name" ] && [ -f "${name%.patch}" ]; then
+                echo "    Applying $name..."
+                patch -p1 < "$f"
+            else
+                echo "    Injecting $name..."
+                cp "$f" .
+            fi
+        done
+    fi
+
+    # Build and always reset patches afterward
+    build_ok=true
+    makepkg -sf --noconfirm --cleanbuild || build_ok=false
+    git checkout . 2>/dev/null || true
+
+    if $build_ok; then
+        mv -f *.pkg.tar.zst "$repo_dir/"
+    else
+        exit 1
+    fi
+
+    cd "$root_dir"
+done

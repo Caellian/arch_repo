@@ -1,0 +1,42 @@
+#!/bin/sh
+set -eu
+
+pkg_dir="${PKG_DIR:?}"
+update_dir="${UPDATE_DIR:?}"
+pkg="${1:-}"
+version="${2:-}"
+
+if [ -n "$pkg" ]; then
+    set -- "$pkg_dir/$pkg"
+else
+    set -- "$pkg_dir"/*/
+fi
+
+for dir in "$@"; do
+    [ -f "$dir/PKGBUILD" ] || continue
+    pkg=$(basename "$dir")
+
+    # Skip submodule packages (they use dynamic pkgver)
+    [ -f "$dir/.git" ] && continue
+
+    pkgver=$(grep -m1 '^pkgver=' "$dir/PKGBUILD" | cut -d= -f2)
+
+    if [ -n "$version" ]; then
+        new_ver="$version"
+    else
+        [ -f "$update_dir/$pkg.sh" ] || continue
+        latest=$("$update_dir/$pkg.sh" "$pkgver" | grep '"tag":"stable"' | head -1)
+        [ -n "$latest" ] || continue
+        new_ver=$(echo "$latest" | grep -oP '"version":"\K[^"]+')
+        new_commit=$(echo "$latest" | grep -oP '"commit":"\K[^"]+' || true)
+    fi
+
+    sed -i "s/^pkgver=.*/pkgver=$new_ver/" "$dir/PKGBUILD"
+    sed -i 's/^pkgrel=.*/pkgrel=1/' "$dir/PKGBUILD"
+
+    if [ -n "${new_commit:-}" ] && grep -q '^_commit=' "$dir/PKGBUILD"; then
+        sed -i "s/^_commit=.*/_commit=$new_commit/" "$dir/PKGBUILD"
+    fi
+
+    echo "==> $pkg: $pkgver -> $new_ver"
+done

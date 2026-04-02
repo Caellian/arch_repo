@@ -1,0 +1,32 @@
+#!/bin/sh
+set -eu
+
+repo_name="${REPO_NAME:?}"
+repo_dir="${REPO_DIR:?}"
+service_name="${SERVICE_NAME:?}"
+root_dir="${ROOT_DIR:?}"
+
+if ! grep -q "^\[$repo_name\]" /etc/pacman.conf; then
+    sudo sed -i "/^\[core\]/i\\[$repo_name]\nSigLevel = Optional TrustAll\nServer = file://$repo_dir\n" /etc/pacman.conf
+    echo "==> $repo_name added to pacman.conf (before [core])"
+else
+    echo "==> $repo_name already in pacman.conf"
+fi
+
+if command -v systemctl >/dev/null 2>&1; then
+    for unit in "$root_dir"/dist/etc/systemd/system/"$service_name".*; do
+        sed "s|@@REPO_DIR@@|$root_dir|g" "$unit" \
+            | sudo tee /etc/systemd/system/"$(basename "$unit")" > /dev/null
+    done
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now "$service_name".timer
+    echo "==> $service_name.timer enabled (systemd)"
+elif [ -d /etc/cron.d ]; then
+    sed "s|@@REPO_DIR@@|$root_dir|g" \
+        "$root_dir/dist/etc/cron.d/$service_name" \
+        | sudo tee /etc/cron.d/"$service_name" > /dev/null
+    sudo chmod 644 /etc/cron.d/"$service_name"
+    echo "==> /etc/cron.d/$service_name installed (cron)"
+else
+    echo "==> No supported scheduler found (systemd/cron), skipping timer setup"
+fi

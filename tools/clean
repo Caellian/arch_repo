@@ -1,0 +1,21 @@
+#!/bin/sh
+set -eu
+
+pkg_dir="${PKG_DIR:?}"
+root_dir="${ROOT_DIR:?}"
+pkg="${1:-}"
+
+if [ -n "$pkg" ]; then
+    set -- "$pkg_dir/$pkg"
+else
+    set -- "$pkg_dir"/*/
+fi
+
+for dir in "$@"; do
+    [ -f "$dir/PKGBUILD" ] || continue
+    echo "==> Cleaning $(basename "$dir")..."
+    cd "$dir"
+    makepkg --clean 2>/dev/null || true
+    rm -f *.pkg.tar.zst
+    cd "$root_dir"
+done

@@ -1,0 +1,21 @@
+#!/bin/sh
+set -eu
+
+repo_dir="${REPO_DIR:?}"
+s3_bucket="${S3_BUCKET:?}"
+force=false
+
+for arg in "$@"; do
+    case "$arg" in
+        -f) force=true ;;
+    esac
+done
+
+if $force; then
+    aws s3 sync "$repo_dir" "$s3_bucket" \
+        --exclude '*' --include '*.pkg.tar.zst' --include '*.db*' --include '*.files*'
+else
+    aws s3 sync "$repo_dir" "$s3_bucket" \
+        --exclude '*' --include '*.pkg.tar.zst' --include '*.db*' --include '*.files*' \
+        --size-only
+fi
