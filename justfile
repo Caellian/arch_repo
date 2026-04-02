@@ -40,10 +40,9 @@ deactivate:
 build pkg="":
     tools/build "{{ pkg }}"
 
-# Update the local repo database
-repo-update:
-    repo-add "{{ repo_dir }}/{{ repo_name }}.db.tar.gz" "{{ repo_dir }}"/*.pkg.tar.zst
-    @echo "==> Local repo updated at {{ repo_dir }}"
+# Update the local repo database and index (optionally for a single package)
+repo-update pkg="":
+    tools/repo-update "{{ pkg }}"
 
 # Update package versions (optionally specify package and/or version)
 update pkg="" version="":

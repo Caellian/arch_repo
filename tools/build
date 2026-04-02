@@ -9,27 +9,9 @@ root_dir="${ROOT_DIR:?}"
 pkg="${1:-}"
 
 index="$repo_dir/$repo_name.index"
+tools_dir="$root_dir/tools"
 mkdir -p "$repo_dir"
 touch "$index"
-
-# Compute a fingerprint of all build inputs for a package.
-# Includes: PKGBUILD (post-patch), overlay files, submodule commit.
-pkg_fingerprint() {
-    dir="$1"
-    pkg="$2"
-    {
-        # PKGBUILD after patches
-        sha256sum "$dir/PKGBUILD"
-        # Overlay files (patches + injected)
-        if [ -d "$patch_dir/$pkg" ]; then
-            find "$patch_dir/$pkg" -type f | sort | xargs sha256sum
-        fi
-        # Submodule commit
-        if [ -f "$dir/.git" ]; then
-            git -C "$dir" rev-parse HEAD
-        fi
-    } | sha256sum | cut -d' ' -f1
-}
 
 if [ -n "$pkg" ]; then
     set -- "$pkg_dir/$pkg"
@@ -40,6 +22,16 @@ fi
 for dir in "$@"; do
     [ -f "$dir/PKGBUILD" ] || continue
     pkg=$(basename "$dir")
+
+    # Check fingerprint against index
+    fingerprint=$("$tools_dir/pkg-fingerprint" "$dir" "$patch_dir")
+    stored=$(grep "^$pkg " "$index" | cut -d' ' -f2 || true)
+
+    if [ "$fingerprint" = "$stored" ]; then
+        echo "==> Skipping $pkg (inputs unchanged)"
+        continue
+    fi
+
     cd "$dir"
 
     # Apply overlay: inject files then apply patches
@@ -47,7 +39,6 @@ for dir in "$@"; do
         for f in "$patch_dir/$pkg"/*; do
             [ -f "$f" ] || continue
             name=$(basename "$f")
-            # foo.patch patches foo, foo.some-description.patch also patches foo
             target=$(echo "${name%.patch}" | sed 's/\.[a-z0-9-]*$//')
             if [ "${name%.patch}" != "$name" ] && [ -f "$target" ]; then
                 echo "    Applying $name..."
@@ -59,18 +50,8 @@ for dir in "$@"; do
         done
     fi
 
-    pkgname=$(grep -m1 '^pkgname=' PKGBUILD | cut -d= -f2)
-    fingerprint=$(pkg_fingerprint "$dir" "$pkg")
-    stored=$(grep "^$pkgname " "$index" | cut -d' ' -f2 || true)
-
-    if [ "$fingerprint" = "$stored" ]; then
-        echo "==> Skipping $pkg (inputs unchanged)"
-        git checkout . 2>/dev/null || true
-        cd "$root_dir"
-        continue
-    fi
-
     # Remove old versions
+    pkgname=$(grep -m1 '^pkgname=' PKGBUILD | cut -d= -f2)
     rm -f "$repo_dir"/${pkgname}-*.pkg.tar.zst
 
     echo "==> Building $pkg..."
@@ -82,9 +63,6 @@ for dir in "$@"; do
 
     if $build_ok; then
         mv -f *.pkg.tar.zst "$repo_dir/"
-        # Update index
-        sed -i "/^$pkgname /d" "$index"
-        echo "$pkgname $fingerprint" >> "$index"
     else
         exit 1
     fi

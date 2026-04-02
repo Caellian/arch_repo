@@ -1,0 +1,40 @@
+#!/bin/sh
+set -eu
+
+repo_dir="${REPO_DIR:?}"
+repo_name="${REPO_NAME:?}"
+pkg_dir="${PKG_DIR:?}"
+patch_dir="${PATCH_DIR:?}"
+root_dir="${ROOT_DIR:?}"
+pkg="${1:-}"
+
+db="$repo_dir/$repo_name.db.tar.gz"
+index="$repo_dir/$repo_name.index"
+touch "$index"
+
+tools_dir="$root_dir/tools"
+
+if [ -n "$pkg" ]; then
+    set -- "$pkg_dir/$pkg"
+else
+    set -- "$pkg_dir"/*/
+fi
+
+for dir in "$@"; do
+    [ -f "$dir/PKGBUILD" ] || continue
+    pkg=$(basename "$dir")
+    pkgname=$(grep -m1 '^pkgname=' "$dir/PKGBUILD" | cut -d= -f2)
+
+    file=$(ls "$repo_dir"/${pkgname}-*.pkg.tar.zst 2>/dev/null | head -1 || true)
+    [ -n "$file" ] || continue
+
+    # Update database
+    repo-add "$db" "$file"
+
+    # Update index
+    fingerprint=$("$tools_dir/pkg-fingerprint" "$dir" "$patch_dir")
+    sed -i "/^$pkg /d" "$index"
+    echo "$pkg $fingerprint" >> "$index"
+
+    echo "==> $pkg: database and index updated"
+done

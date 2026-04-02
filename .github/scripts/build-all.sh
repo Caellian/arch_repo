@@ -42,6 +42,10 @@ for dir in packages/*/; do
             echo "pass $pkg" >> /tmp/build-results.txt
             succeeded="${succeeded:+$succeeded,}$pkg"
             echo "==> $pkg: OK"
+            # Push immediately so progress isn't lost on timeout
+            just repo-update "$pkg"
+            s3_remove_old "$pkg"
+            just push
         fi
     else
         echo "fail $pkg" >> /tmp/build-results.txt
@@ -51,14 +55,6 @@ for dir in packages/*/; do
     cat /tmp/build-logs/"$pkg".log
     echo "::endgroup::"
 done
-
-# Update repo database and clean old S3 packages
-if [ -n "$succeeded" ]; then
-    just repo-update
-    for pkg in $(echo "$succeeded" | tr ',' ' '); do
-        s3_remove_old "$pkg"
-    done
-fi
 
 # Write job summary
 {

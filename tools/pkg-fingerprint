@@ -1,0 +1,20 @@
+#!/bin/sh
+set -eu
+
+# Compute a fingerprint of all build inputs for a package.
+# Usage: pkg-fingerprint <package-dir> <patch-dir>
+# Hashes PKGBUILD, overlay files, and submodule commit.
+
+dir="${1:?Usage: $0 <package-dir> <patch-dir>}"
+patch_dir="${2:?}"
+pkg=$(basename "$dir")
+
+{
+    sha256sum "$dir/PKGBUILD"
+    if [ -d "$patch_dir/$pkg" ]; then
+        find "$patch_dir/$pkg" -type f | sort | xargs sha256sum
+    fi
+    if [ -f "$dir/.git" ]; then
+        git -C "$dir" rev-parse HEAD
+    fi
+} | sha256sum | cut -d' ' -f1
