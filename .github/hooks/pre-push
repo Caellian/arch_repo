@@ -1,0 +1,3 @@
+#!/bin/sh
+# Push packages to S3 before git push
+just push 2>/dev/null || echo "Warning: S3 push failed (aws cli configured?)"

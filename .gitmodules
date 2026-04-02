@@ -1,0 +1,3 @@
+[submodule "packages/msvc-wine"]
+	path = packages/msvc-wine
+	url = https://aur.archlinux.org/msvc-wine-git.git

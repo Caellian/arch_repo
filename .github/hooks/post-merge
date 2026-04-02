@@ -1,0 +1,3 @@
+#!/bin/sh
+# Pull packages from S3 after merge/pull
+just pull 2>/dev/null || echo "Warning: S3 pull failed (aws cli configured?)"

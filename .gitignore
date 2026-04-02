@@ -1,0 +1,8 @@
+packages/*/pkg
+packages/*/src
+packages/*/*.zip
+packages/*/*.tar
+packages/*/*.tar.*
+
+local/
+.aws/

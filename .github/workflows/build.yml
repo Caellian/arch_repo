@@ -1,0 +1,66 @@
+name: Build packages
+
+on:
+  push:
+    paths:
+      - 'packages/**'
+      - 'patches/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      FOUNDRYVTT_EMAIL: ${{ secrets.FOUNDRYVTT_EMAIL }}
+      FOUNDRYVTT_PASSWORD: ${{ secrets.FOUNDRYVTT_PASSWORD }}
+    steps:
+      - name: Install dependencies
+        run: pacman -Syu --noconfirm git just aws-cli-v2 github-cli
+
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Set up builder user
+        run: |
+          useradd -m builder
+          echo 'builder ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          runuser -u builder -- git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+
+      - name: Pull repo database from S3
+        run: runuser -u builder -- just pull-db
+
+      - name: Build packages
+        id: build
+        continue-on-error: true
+        run: |
+          chmod a+w "$GITHUB_OUTPUT" "$GITHUB_STEP_SUMMARY"
+          runuser -u builder -- .github/scripts/build-all.sh
+
+      - name: Push packages to S3
+        if: steps.build.outputs.succeeded_packages != ''
+        run: just push
+
+      - name: Report build failures
+        if: steps.build.outputs.has_failures == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for pkg in $(echo "${{ steps.build.outputs.failed_packages }}" | tr ',' ' '); do
+            BUILD_LOG_FILE="/tmp/build-logs/${pkg}.log" \
+              .github/scripts/report-failure.sh "build-failure" "$pkg"
+          done
+
+      - name: Fail job if any builds failed
+        if: steps.build.outputs.has_failures == 'true'
+        run: exit 1

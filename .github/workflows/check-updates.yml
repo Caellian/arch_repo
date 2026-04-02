@@ -1,0 +1,158 @@
+name: Check for package updates
+
+on:
+  schedule:
+    - cron: '0 12 * * 4' # Every Thursday at noon UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  update-submodules:
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+    steps:
+      - name: Install dependencies
+        run: pacman -Syu --noconfirm git just aws-cli-v2 github-cli
+
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Pull packages from S3
+        run: just pull
+
+      - name: Record pre-update submodule commits
+        run: |
+          git submodule foreach --quiet \
+            'echo "$(basename $sm_path) $(git rev-parse HEAD)"' > /tmp/pre-submodule-commits.txt
+
+      - name: Fast-forward submodules
+        run: git submodule update --remote --merge
+
+      - name: Record post-update submodule commits
+        run: |
+          git submodule foreach --quiet \
+            'echo "$(basename $sm_path) $(git rev-parse HEAD)"' > /tmp/post-submodule-commits.txt
+
+      - name: Verify patches apply cleanly
+        id: patches
+        continue-on-error: true
+        run: .github/scripts/check-patches-all.sh
+
+      - name: Build updated submodule packages
+        id: build
+        continue-on-error: true
+        run: .github/scripts/build-all.sh
+
+      - name: Push packages to S3
+        if: steps.build.outputs.succeeded_packages != ''
+        run: just push
+
+      - name: Commit submodule updates
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add packages/*
+          if git diff --cached --quiet; then
+            echo "Nothing to commit."
+            exit 0
+          fi
+          git diff --cached --stat
+          git commit -m "fast-forward submodules"
+          git push
+
+      - name: Report patch drift
+        if: steps.patches.outputs.has_failures == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for pkg in $(echo "${{ steps.patches.outputs.failed_packages }}" | tr ',' ' '); do
+            failed_patches=$(grep "^fail $pkg " /tmp/patch-results.txt | cut -d' ' -f3-)
+            submodule_url=$(git config --file .gitmodules "submodule.packages/$pkg.url" 2>/dev/null || true)
+            old_commit=$(grep "^$pkg " /tmp/pre-submodule-commits.txt | cut -d' ' -f2)
+            new_commit=$(grep "^$pkg " /tmp/post-submodule-commits.txt | cut -d' ' -f2)
+            OLD_COMMIT="$old_commit" \
+            NEW_COMMIT="$new_commit" \
+            FAILED_PATCHES="$failed_patches" \
+            SUBMODULE_URL="$submodule_url" \
+              .github/scripts/report-failure.sh "patch-drift" "$pkg"
+          done
+
+      - name: Report build failures
+        if: steps.build.outputs.has_failures == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for pkg in $(echo "${{ steps.build.outputs.failed_packages }}" | tr ',' ' '); do
+            BUILD_LOG_FILE="/tmp/build-logs/${pkg}.log" \
+              .github/scripts/report-failure.sh "build-failure" "$pkg"
+          done
+
+      - name: Fail job if any failures
+        if: steps.patches.outputs.has_failures == 'true' || steps.build.outputs.has_failures == 'true'
+        run: exit 1
+
+  check-updates:
+    needs: update-submodules
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+    steps:
+      - name: Install dependencies
+        run: pacman -Syu --noconfirm git just aws-cli-v2 github-cli
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Pull packages from S3
+        run: just pull
+
+      - name: Check for updates and bump pkgver
+        run: just update
+
+      - name: Build updated packages
+        id: build
+        continue-on-error: true
+        run: .github/scripts/build-all.sh
+
+      - name: Push packages to S3
+        if: steps.build.outputs.succeeded_packages != ''
+        run: just push
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add packages/*/PKGBUILD
+          if git diff --cached --quiet; then
+            echo "Nothing to commit."
+            exit 0
+          fi
+          git diff --cached --stat
+          git commit -m "bump package versions"
+          git push
+
+      - name: Report build failures
+        if: steps.build.outputs.has_failures == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for pkg in $(echo "${{ steps.build.outputs.failed_packages }}" | tr ',' ' '); do
+            BUILD_LOG_FILE="/tmp/build-logs/${pkg}.log" \
+              .github/scripts/report-failure.sh "build-failure" "$pkg"
+          done
+
+      - name: Fail job if any builds failed
+        if: steps.build.outputs.has_failures == 'true'
+        run: exit 1
