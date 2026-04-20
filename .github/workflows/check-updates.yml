@@ -33,8 +33,8 @@ jobs:
           runuser -u builder -- git config --global --add safe.directory "$GITHUB_WORKSPACE"
           chown -R builder:builder "$GITHUB_WORKSPACE"
 
-      - name: Pull packages from S3
-        run: runuser -u builder -- just pull
+      - name: Pull repo database from S3
+        run: runuser -u builder -- just pull-db
 
       - name: Record pre-update submodule commits
         run: |
@@ -136,8 +136,8 @@ jobs:
           runuser -u builder -- git config --global --add safe.directory "$GITHUB_WORKSPACE"
           chown -R builder:builder "$GITHUB_WORKSPACE"
 
-      - name: Pull packages from S3
-        run: runuser -u builder -- just pull
+      - name: Pull repo database from S3
+        run: runuser -u builder -- just pull-db
 
       - name: Check for updates and bump pkgver
         run: runuser -u builder -- just update
